@@ -290,7 +290,10 @@ $('#mediaRun').addEventListener('click', async () => {
     mediaStatus('Reading source file into browser memory…');
     await ffmpeg.writeFile(inputName, new Uint8Array(await file.arrayBuffer()));
     mediaStatus('Converting to MP4 (H.264 video / AAC audio)…');
-    const code = await ffmpeg.exec(['-i', inputName, '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23', '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', outputName]);
+    const args = file.type.startsWith('audio/')
+      ? ['-y', '-i', inputName, '-vn', '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', outputName]
+      : ['-y', '-i', inputName, '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23', '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', outputName];
+    const code = await ffmpeg.exec(args);
     if (code !== 0) throw new Error('FFmpeg could not convert this file. Try a different format or a smaller source.');
     const data = await ffmpeg.readFile(outputName);
     mediaOutputUrl = URL.createObjectURL(new Blob([data], { type: 'video/mp4' }));
