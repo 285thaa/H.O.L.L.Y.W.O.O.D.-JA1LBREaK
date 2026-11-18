@@ -43,7 +43,7 @@ Without a key, the dashboard still works in local mode (commands, notes). The ke
 
 ## Media Studio (server processing)
 
-The integrated Media Studio adds server-side processing for FFmpeg, PySceneDetect, Auto-Editor, WhisperX, and Remotion. The Cloudflare Worker is the authenticated gateway; the processing engine runs separately in Docker. See `../media-server/README.md` for deployment. Configure `MEDIA_API_URL` as a Worker variable and `MEDIA_API_TOKEN` as a Worker secret before using Media Studio. The app currently supports uploads up to 100 MB through the Worker gateway.
+Media Studio currently provides FFmpeg MP4 conversion directly in the browser using FFmpeg WebAssembly. Source media stays on the user's device; no Docker server, Worker secret, or media upload is needed for this operation. The FFmpeg wrapper and core are loaded from jsDelivr on first use (approximately 32 MB). PySceneDetect, Auto-Editor, WhisperX, and Remotion remain planned server-side integrations and are not enabled in this browser-only mode.
 
 ## Android app (APK) for your tablet
 The site is an installable PWA (manifest, service worker, icons, offline page). Media Studio processing requires the separately deployed media server; the APK is a client shell and does not contain the video/AI engines.
