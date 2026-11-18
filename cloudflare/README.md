@@ -64,3 +64,8 @@ Copy `.dev.vars.example` to `.dev.vars`, run `npm run db:local`, then `npm run d
 ## Layout
 - `src/worker.js` routes, login/setup, API · `src/auth.js` hashing, sessions, rate limit · `src/views.js` pages
 - `public/` static files (CSS, JS, icons, manifest, service worker) · `schema.sql` database tables · `wrangler.jsonc` config
+
+
+## Automated deployment
+
+GitHub Actions deploys this Worker to Cloudflare on pushes to `main` that change `cloudflare/**`. The repository must have an Actions secret named `CLOUDFLARE_API_TOKEN` with Workers Scripts Edit and D1 Edit permissions for the target account. The workflow also applies `schema.sql` to the remote D1 database before deployment.
