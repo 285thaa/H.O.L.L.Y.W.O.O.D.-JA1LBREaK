@@ -12,7 +12,7 @@
     {
       "binding": "DB",
       "database_name": "hollywood-jailbreak",
-      "database_id": "REPLACE_WITH_ID_FROM_wrangler_d1_create"
+      "database_id": "2dcd7377-9292-4aa7-8530-2e74cb6f6b9e"
     }
   ],
   "vars": {
