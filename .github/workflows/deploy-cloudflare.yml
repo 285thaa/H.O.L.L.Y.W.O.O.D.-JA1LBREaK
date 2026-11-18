@@ -1,0 +1,44 @@
+name: Deploy Hollywood Jailbreak to Cloudflare
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "cloudflare/**"
+      - ".github/workflows/deploy-cloudflare.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install Wrangler
+        working-directory: cloudflare
+        run: npm install
+
+      - name: Apply database schema
+        working-directory: cloudflare
+        run: npx wrangler d1 execute hollywood-jailbreak --remote --file=schema.sql
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: "4e6c030fe8936f38512aefbf37d2b67c"
+
+      - name: Deploy Worker and static assets
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: "4e6c030fe8936f38512aefbf37d2b67c"
+          workingDirectory: cloudflare
+          command: deploy
