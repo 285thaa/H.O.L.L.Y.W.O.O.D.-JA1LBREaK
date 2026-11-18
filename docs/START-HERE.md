@@ -14,7 +14,11 @@ This package adds a Media Studio section to the existing Cloudflare edition and 
 
 The updated Cloudflare app and server code are prepared, and the backend API was locally smoke-tested for health, authentication, job creation, and per-user job isolation. The Docker image was not built here, and nothing has been deployed to your Cloudflare account or a VPS. A signed Android APK comes after the web app is live on HTTPS and the server is reachable. The existing app is already PWA-capable and can be installed from Chrome while that APK packaging step is pending.
 
-## Step 1 — deploy the media server
+## Current free mode — browser FFmpeg
+
+The deployed app can start with browser-based FFmpeg MP4 conversion; no VPS, Docker service, API token, or payment card is required. Open Media Studio, choose a source file, and convert to MP4. FFmpeg WebAssembly is downloaded from jsDelivr on first use (about 32 MB). Processing happens on the current device, so keep the page open and use smaller files on phones. PySceneDetect, Auto-Editor, WhisperX, and Remotion are not enabled in this mode.
+
+## Optional future mode — deploy the media server
 
 You need a Linux VPS or dedicated server with Docker Engine + Compose, a public DNS name, HTTPS, and enough storage for uploaded videos and rendered outputs. WhisperX runs on CPU by default but is much faster with a compatible NVIDIA GPU. The first Docker build compiles Auto-Editor and its bundled FFmpeg dependency set, so allow significant build time, disk, RAM, and bandwidth.
 
