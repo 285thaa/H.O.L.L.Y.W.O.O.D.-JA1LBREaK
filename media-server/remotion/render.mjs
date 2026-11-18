@@ -1,0 +1,15 @@
+import path from 'node:path';
+import { bundle } from '@remotion/bundler';
+import { getCompositions, renderMedia, ensureBrowser } from '@remotion/renderer';
+const [input, output, title] = process.argv.slice(2);
+if (!input || !output) throw new Error('Usage: render.mjs input output [title]');
+import { execFileSync } from 'node:child_process';
+const probe = JSON.parse(execFileSync('ffprobe', ['-v','error','-show_entries','format=duration','-of','json',input], {encoding:'utf8'}));
+const durationInFrames = Math.max(1, Math.ceil(Number(probe.format.duration || 10) * 30));
+await ensureBrowser();
+const serveUrl = await bundle({ entryPoint: path.join('/srv/remotion', 'src.jsx') });
+const inputProps = { videoSrc: input, title: title || 'Hollywood Jailbreak Studio', durationInFrames };
+const comps = await getCompositions(serveUrl, { inputProps });
+const composition = comps.find((c) => c.id === 'HollywoodVideo');
+if (!composition) throw new Error('Remotion composition not found');
+await renderMedia({ composition, serveUrl, codec: 'h264', outputLocation: output, inputProps, onProgress: () => {} });

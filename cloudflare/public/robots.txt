@@ -1,0 +1,4 @@
+# Private developer tool: keep the app out of search results. Legal pages may be indexed.
+User-agent: *
+Allow: /legal
+Disallow: /

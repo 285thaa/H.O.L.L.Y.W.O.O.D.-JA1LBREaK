@@ -1,0 +1,280 @@
+window.HJ_CONFIG = { csrf: document.body.dataset.csrf || '', aiEnabled: document.body.dataset.ai === '1' };
+
+const commands = [
+  ['/help', 'Show available commands and how to use the workspace.'],
+  ['/menu', 'Open the command center navigation.'],
+  ['/code', 'Generate code for a described feature or task.'],
+  ['/debug', 'Analyze an error, stack trace, or unexpected behavior.'],
+  ['/explain', 'Explain code, configuration, or architecture.'],
+  ['/optimize', 'Improve performance, maintainability, or resource use.'],
+  ['/review', 'Review code quality, reliability, and edge cases.'],
+  ['/build', 'Plan and implement a feature step by step.'],
+  ['/status', 'Summarize the current project state from supplied context.'],
+  ['/reset', 'Clear the current input fields and selections.'],
+];
+const tools = [
+  ['Code Generator', 'Create a complete implementation from requirements.'],
+  ['Bug Analyzer', 'Find likely causes and propose tested fixes.'],
+  ['UI Architect', 'Design responsive UI structure and components.'],
+  ['File Planner', 'Plan folders, files, and integration points.'],
+  ['Performance Analyzer', 'Identify bottlenecks and optimization opportunities.'],
+  ['Documentation Writer', 'Write setup guides, API docs, and comments.'],
+];
+
+const $ = (s) => document.querySelector(s);
+const VIEWS = ['dashboard', 'commands', 'lab', 'tools', 'media', 'security', 'notes', 'about'];
+
+/* ---------- toast ---------- */
+let toastTimer;
+function toast(msg) {
+  const t = $('#toast');
+  t.textContent = msg;
+  t.classList.remove('hidden');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.add('hidden'), 1800);
+}
+async function copyText(text, okMsg = 'Copied') {
+  try { await navigator.clipboard.writeText(text); toast(okMsg); return true; }
+  catch { toast('Copy blocked: select the text and copy manually'); return false; }
+}
+
+/* ---------- navigation (supports #notes style links and the back button) ---------- */
+function showView(name, { updateHash = true } = {}) {
+  if (!VIEWS.includes(name)) name = 'dashboard';
+  document.querySelectorAll('.view').forEach((x) => x.classList.toggle('active', x.id === 'view-' + name));
+  document.querySelectorAll('.nav').forEach((x) => {
+    const on = x.dataset.view === name;
+    x.classList.toggle('active', on);
+    if (on) x.setAttribute('aria-current', 'page'); else x.removeAttribute('aria-current');
+  });
+  if (updateHash) history.replaceState(null, '', name === 'dashboard' ? location.pathname : '#' + name);
+  window.scrollTo({ top: 0 });
+}
+document.querySelectorAll('.nav').forEach((b) => b.addEventListener('click', () => showView(b.dataset.view)));
+document.querySelectorAll('[data-goto]').forEach((b) => b.addEventListener('click', () => showView(b.dataset.goto)));
+window.addEventListener('hashchange', () => showView(location.hash.slice(1), { updateHash: false }));
+if (location.hash) showView(location.hash.slice(1), { updateHash: false });
+
+/* ---------- command directory ---------- */
+function renderCommands(filter = '') {
+  const root = $('#commandList');
+  root.innerHTML = '';
+  const q = filter.trim().toLowerCase();
+  const rows = commands.filter(([c, d]) => (c + ' ' + d).toLowerCase().includes(q));
+  if (!rows.length) {
+    const p = document.createElement('p');
+    p.className = 'muted empty';
+    p.textContent = 'No commands match that search.';
+    root.append(p);
+    return;
+  }
+  rows.forEach(([c, d]) => {
+    const row = document.createElement('article');
+    row.className = 'command';
+    const info = document.createElement('div');
+    const name = document.createElement('b'); name.textContent = c;
+    const desc = document.createElement('span'); desc.textContent = d;
+    info.append(name, desc);
+    const btn = document.createElement('button');
+    btn.type = 'button'; btn.className = 'copy'; btn.textContent = 'COPY';
+    btn.setAttribute('aria-label', 'Copy command ' + c);
+    btn.addEventListener('click', async () => {
+      if (await copyText(c, 'Copied ' + c)) { btn.textContent = 'COPIED'; setTimeout(() => (btn.textContent = 'COPY'), 1200); }
+    });
+    row.append(info, btn);
+    root.append(row);
+  });
+}
+renderCommands();
+$('#commandSearch').addEventListener('input', (e) => renderCommands(e.target.value));
+
+/* ---------- developer tools ---------- */
+(function renderTools() {
+  const root = $('#toolGrid');
+  tools.forEach(([name, desc]) => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'tile';
+    const title = document.createElement('b'); title.textContent = name;
+    const span = document.createElement('span'); span.textContent = desc;
+    b.append(title, span);
+    b.addEventListener('click', () => {
+      $('#toolPrompt').value = 'Please act as my ' + name + '. ' + desc + '\n\n';
+      $('#toolPrompt').focus();
+    });
+    root.append(b);
+  });
+})();
+
+/* ---------- assistant requests ---------- */
+async function post(payload) {
+  const res = await fetch('/api', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': window.HJ_CONFIG.csrf },
+    body: JSON.stringify(payload),
+  });
+  let data = {};
+  try { data = await res.json(); } catch { /* non-JSON error page */ }
+  if (!res.ok) throw new Error(data.error || 'Request failed (HTTP ' + res.status + ').');
+  return data;
+}
+
+async function requestAssistant(prompt, mode, target, button) {
+  const out = $(target);
+  out.classList.remove('hidden', 'err');
+  out.classList.add('busy');
+  out.textContent = 'Processing request...';
+  if (!String(prompt).replace(/Technology:[^\n]*|Perform a secure coding review\. Only assess authorized code\./g, '').trim()) {
+    out.classList.remove('busy'); out.classList.add('err');
+    out.textContent = 'Enter a request first.';
+    return;
+  }
+  button.disabled = true;
+  try {
+    const data = await post({ action: 'assistant', prompt, mode });
+    out.classList.remove('busy');
+    out.textContent = data.answer || 'No response received.';
+    const c = document.createElement('button');
+    c.type = 'button'; c.className = 'copy rcopy'; c.textContent = 'COPY RESULT';
+    c.addEventListener('click', () => copyText(data.answer || '', 'Result copied'));
+    out.prepend(c);
+  } catch (err) {
+    out.classList.remove('busy'); out.classList.add('err');
+    out.textContent = err.message || 'Request failed. Check the server connection and try again.';
+  } finally {
+    button.disabled = false;
+  }
+}
+
+const runners = {
+  quickRun: () => requestAssistant($('#quickPrompt').value, 'general', '#quickResult', $('#quickRun')),
+  labRun: () => requestAssistant('Technology: ' + $('#language').value + '\n\n' + $('#labPrompt').value, 'code', '#labResult', $('#labRun')),
+  toolRun: () => requestAssistant($('#toolPrompt').value, 'developer-tool', '#toolResult', $('#toolRun')),
+  securityRun: () => requestAssistant('Perform a secure coding review. Only assess authorized code.\n\n' + $('#securityPrompt').value, 'security-review', '#securityResult', $('#securityRun')),
+};
+Object.entries(runners).forEach(([id, fn]) => $('#' + id).addEventListener('click', fn));
+[['quickPrompt', 'quickRun'], ['labPrompt', 'labRun'], ['toolPrompt', 'toolRun'], ['securityPrompt', 'securityRun']].forEach(([field, btn]) => {
+  $('#' + field).addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); runners[btn](); }
+  });
+});
+
+/* ---------- notes ---------- */
+function syncEmpty() {
+  $('#notesEmpty').classList.toggle('hidden', $('#notesList').children.length > 0);
+}
+function buildNote(id, title, body, when) {
+  const art = document.createElement('article');
+  art.className = 'note'; art.dataset.id = String(id);
+  const head = document.createElement('div'); head.className = 'note-head';
+  const nb = document.createElement('b'); nb.textContent = title;
+  const del = document.createElement('button');
+  del.type = 'button'; del.className = 'note-del'; del.textContent = 'DELETE';
+  del.setAttribute('aria-label', 'Delete note ' + title);
+  head.append(nb, del);
+  const np = document.createElement('p'); np.textContent = body;
+  const ns = document.createElement('small'); ns.textContent = when;
+  art.append(head, np, ns);
+  return art;
+}
+$('#saveNote').addEventListener('click', async () => {
+  const status = $('#noteStatus');
+  const btn = $('#saveNote');
+  const title = $('#noteTitle').value.trim();
+  const body = $('#noteBody').value;
+  if (!title) { status.textContent = 'Add a title first.'; $('#noteTitle').focus(); return; }
+  btn.disabled = true; status.textContent = 'Saving...';
+  try {
+    const d = await post({ action: 'save_note', title, body });
+    status.textContent = 'Saved.';
+    $('#notesList').prepend(buildNote(d.id, title, body, 'just now'));
+    $('#noteTitle').value = ''; $('#noteBody').value = '';
+    syncEmpty();
+  } catch (e) {
+    status.textContent = e.message || 'Could not save note.';
+  } finally {
+    btn.disabled = false;
+  }
+});
+$('#notesList').addEventListener('click', async (e) => {
+  const btn = e.target.closest('.note-del');
+  if (!btn) return;
+  const note = btn.closest('.note');
+  if (!confirm('Delete this note? This cannot be undone.')) return;
+  btn.disabled = true;
+  try {
+    await post({ action: 'delete_note', id: Number(note.dataset.id) });
+    note.remove(); syncEmpty(); toast('Note deleted');
+  } catch (err) {
+    btn.disabled = false; toast(err.message || 'Could not delete note');
+  }
+});
+
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') document.activeElement.blur(); });
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => { navigator.serviceWorker.register('/sw.js').catch(() => {}); });
+}
+
+
+/* ---------- Media Studio: authenticated uploads go through the Worker gateway ---------- */
+let activeMediaJob = null;
+let mediaPollHandle = null;
+const mediaStatus = (message) => { $('#mediaStatus').textContent = message; };
+async function mediaRequest(url, options = {}) {
+  const headers = new Headers(options.headers || {});
+  if (options.method === 'POST') headers.set('X-CSRF-Token', window.HJ_CONFIG.csrf);
+  const res = await fetch(url, { ...options, headers, credentials: 'same-origin' });
+  const type = res.headers.get('content-type') || '';
+  const data = type.includes('application/json') ? await res.json() : null;
+  if (!res.ok) throw new Error(data?.error || data?.detail || `Media request failed (HTTP ${res.status}).`);
+  return data;
+}
+async function pollMediaJob(id) {
+  try {
+    const data = await mediaRequest('/media/' + encodeURIComponent(id));
+    $('#mediaResult').classList.remove('hidden', 'err');
+    $('#mediaResult').textContent = `Job ${data.id}\nStatus: ${data.status}\n${data.message || ''}`;
+    if (data.status === 'completed') {
+      mediaStatus('Processing complete.');
+      $('#mediaDownload').href = '/media/' + encodeURIComponent(id) + '/output';
+      $('#mediaDownload').classList.remove('hidden');
+      if (mediaPollHandle) clearInterval(mediaPollHandle);
+      $('#mediaRun').disabled = false;
+    } else if (data.status === 'failed') {
+      mediaStatus('Processing failed.');
+      if (mediaPollHandle) clearInterval(mediaPollHandle);
+      $('#mediaRun').disabled = false;
+    } else mediaStatus('Server is processing your media…');
+  } catch (err) {
+    mediaStatus(err.message || 'Could not check job status.');
+    if (mediaPollHandle) clearInterval(mediaPollHandle);
+    $('#mediaRun').disabled = false;
+  }
+}
+$('#mediaRun').addEventListener('click', async () => {
+  const file = $('#mediaFile').files[0];
+  const operation = $('#mediaOperation').value;
+  const button = $('#mediaRun');
+  $('#mediaDownload').classList.add('hidden');
+  $('#mediaResult').classList.add('hidden');
+  if (!file) { mediaStatus('Choose a source file first.'); $('#mediaFile').focus(); return; }
+  if (file.size > 95 * 1024 * 1024) { mediaStatus('This app currently allows uploads up to 95 MB.'); return; }
+  const form = new FormData();
+  form.append('file', file, file.name);
+  form.append('operation', operation);
+  form.append('title', $('#mediaTitle').value.trim());
+  button.disabled = true; mediaStatus('Uploading securely to your media server…');
+  try {
+    const data = await mediaRequest('/media', { method: 'POST', body: form });
+    activeMediaJob = data.id;
+    mediaStatus('Upload complete. Processing started.');
+    $('#mediaResult').classList.remove('hidden');
+    $('#mediaResult').textContent = `Job ${data.id}\n${data.message || 'Queued for processing.'}`;
+    if (mediaPollHandle) clearInterval(mediaPollHandle);
+    mediaPollHandle = setInterval(() => pollMediaJob(activeMediaJob), 3000);
+    await pollMediaJob(activeMediaJob);
+  } catch (err) {
+    mediaStatus(err.message || 'Upload failed.');
+    button.disabled = false;
+  }
+});

@@ -1,0 +1,18 @@
+HOLLYWOOD JAILBREAK — INTEGRATED MEDIA STUDIO
+
+Prepared:
+- Existing Cloudflare app retained and extended with Media Studio UI.
+- Authenticated Worker gateway routes added for uploads, job status, and output downloads.
+- Docker media-server API added for FFmpeg, PySceneDetect, Auto-Editor, WhisperX, and Remotion.
+- Auto-Editor source subset from the supplied Nim repository included under media-server/vendor/auto-editor.
+- Backend smoke tests passed for health, authentication, job creation, per-user job isolation, and one-active-job limit.
+- JavaScript syntax checks and Python compilation checks passed.
+
+Not yet done:
+- Docker image build (requires network access, Linux build host, and substantial build resources).
+- Media server deployment or HTTPS reverse proxy setup.
+- Cloudflare account deployment / secret configuration.
+- End-to-end video processing test on the deployed server.
+- Android APK packaging/signing. The APK is the final packaging step after the app is live on HTTPS.
+
+No credentials, API keys, or .env secrets are included.

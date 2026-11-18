@@ -1,0 +1,27 @@
+services:
+  hollywood-media:
+    build: .
+    container_name: hollywood-media
+    restart: unless-stopped
+    environment:
+      MEDIA_API_TOKEN: ${MEDIA_API_TOKEN:?Set a long random token in .env}
+      DATA_DIR: /data
+      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-100}
+      JOB_TIMEOUT_SECONDS: ${JOB_TIMEOUT_SECONDS:-21600}
+      WHISPER_MODEL: ${WHISPER_MODEL:-small}
+      WHISPER_DEVICE: ${WHISPER_DEVICE:-cpu}
+      WHISPER_COMPUTE_TYPE: ${WHISPER_COMPUTE_TYPE:-int8}
+      HF_TOKEN: ${HF_TOKEN:-}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}
+    volumes:
+      - hollywood_media_data:/data
+    ports:
+      - "127.0.0.1:8080:8080"
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    tmpfs:
+      - /tmp:size=2g,mode=1777
+volumes:
+  hollywood_media_data:

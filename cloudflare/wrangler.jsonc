@@ -1,0 +1,29 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "hollywood-jailbreak",
+  "main": "src/worker.js",
+  "compatibility_date": "2025-09-01",
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": true
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "hollywood-jailbreak",
+      "database_id": "REPLACE_WITH_ID_FROM_wrangler_d1_create"
+    }
+  ],
+  "vars": {
+    "AI_ENABLED": "false",
+    "MEDIA_API_URL": "",
+    "AI_BASE_URL": "https://api.openai.com/v1",
+    "AI_MODEL": "gpt-4.1-mini",
+    // Public contact shown on the legal pages (Terms / Privacy / Copyright). Use a business address, not a personal one.
+    "CONTACT_EMAIL": ""
+  },
+  // To serve from your own domain, uncomment and edit (the domain must be on your Cloudflare account):
+  // "routes": [{ "pattern": "tools.285garage.com", "custom_domain": true }],
+  "observability": { "enabled": true }
+}
