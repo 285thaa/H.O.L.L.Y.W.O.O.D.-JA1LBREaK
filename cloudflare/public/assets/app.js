@@ -216,65 +216,98 @@ if ('serviceWorker' in navigator) {
 }
 
 
-/* ---------- Media Studio: authenticated uploads go through the Worker gateway ---------- */
-let activeMediaJob = null;
-let mediaPollHandle = null;
+/* ---------- Media Studio: browser-based FFmpeg (no media server required) ---------- */
+let browserFFmpeg = null;
+let ffmpegLoadPromise = null;
+let mediaOutputUrl = null;
+const FFMPEG_VERSION = '0.12.10';
+const FFMPEG_CDN = 'https://cdn.jsdelivr.net';
 const mediaStatus = (message) => { $('#mediaStatus').textContent = message; };
-async function mediaRequest(url, options = {}) {
-  const headers = new Headers(options.headers || {});
-  if (options.method === 'POST') headers.set('X-CSRF-Token', window.HJ_CONFIG.csrf);
-  const res = await fetch(url, { ...options, headers, credentials: 'same-origin' });
-  const type = res.headers.get('content-type') || '';
-  const data = type.includes('application/json') ? await res.json() : null;
-  if (!res.ok) throw new Error(data?.error || data?.detail || `Media request failed (HTTP ${res.status}).`);
-  return data;
-}
-async function pollMediaJob(id) {
-  try {
-    const data = await mediaRequest('/media/' + encodeURIComponent(id));
-    $('#mediaResult').classList.remove('hidden', 'err');
-    $('#mediaResult').textContent = `Job ${data.id}\nStatus: ${data.status}\n${data.message || ''}`;
-    if (data.status === 'completed') {
-      mediaStatus('Processing complete.');
-      $('#mediaDownload').href = '/media/' + encodeURIComponent(id) + '/output';
-      $('#mediaDownload').classList.remove('hidden');
-      if (mediaPollHandle) clearInterval(mediaPollHandle);
-      $('#mediaRun').disabled = false;
-    } else if (data.status === 'failed') {
-      mediaStatus('Processing failed.');
-      if (mediaPollHandle) clearInterval(mediaPollHandle);
-      $('#mediaRun').disabled = false;
-    } else mediaStatus('Server is processing your media…');
-  } catch (err) {
-    mediaStatus(err.message || 'Could not check job status.');
-    if (mediaPollHandle) clearInterval(mediaPollHandle);
-    $('#mediaRun').disabled = false;
+
+async function loadFFmpegLibrary() {
+  if (window.FFmpegWASM) return window.FFmpegWASM;
+  if (!window.__hjFFmpegScriptPromise) {
+    window.__hjFFmpegScriptPromise = new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = FFMPEG_CDN + '/npm/@ffmpeg/ffmpeg@' + FFMPEG_VERSION + '/dist/umd/ffmpeg.js';
+      script.async = true;
+      script.onload = () => window.FFmpegWASM ? resolve(window.FFmpegWASM) : reject(new Error('FFmpeg library API was not found.'));
+      script.onerror = () => reject(new Error('Could not download FFmpeg. Check your connection and try again.'));
+      document.head.append(script);
+    });
   }
+  return window.__hjFFmpegScriptPromise;
 }
+
+async function fetchFFmpegBlob(url, type) {
+  const response = await fetch(url, { mode: 'cors', credentials: 'omit' });
+  if (!response.ok) throw new Error('Could not load an FFmpeg component (' + response.status + ').');
+  return URL.createObjectURL(new Blob([await response.arrayBuffer()], { type }));
+}
+
+async function getBrowserFFmpeg() {
+  if (browserFFmpeg) return browserFFmpeg;
+  if (ffmpegLoadPromise) return ffmpegLoadPromise;
+  ffmpegLoadPromise = (async () => {
+    mediaStatus('Loading FFmpeg WebAssembly (~32 MB) for first use…');
+    const api = await loadFFmpegLibrary();
+    const ffmpeg = new api.FFmpeg();
+    const base = FFMPEG_CDN + '/npm/@ffmpeg/core@' + FFMPEG_VERSION + '/dist/umd/';
+    const [coreURL, wasmURL, classWorkerURL] = await Promise.all([
+      fetchFFmpegBlob(base + 'ffmpeg-core.js', 'text/javascript'),
+      fetchFFmpegBlob(base + 'ffmpeg-core.wasm', 'application/wasm'),
+      fetchFFmpegBlob(FFMPEG_CDN + '/npm/@ffmpeg/ffmpeg@' + FFMPEG_VERSION + '/dist/umd/814.ffmpeg.js', 'text/javascript')
+    ]);
+    ffmpeg.on('log', ({ message }) => { if (message) mediaStatus(message.slice(-220)); });
+    ffmpeg.on('progress', ({ progress }) => {
+      if (Number.isFinite(progress)) mediaStatus('Converting on this device… ' + Math.max(0, Math.min(100, Math.round(progress * 100))) + '%');
+    });
+    await ffmpeg.load({ coreURL, wasmURL, classWorkerURL });
+    browserFFmpeg = ffmpeg;
+    mediaStatus('FFmpeg is ready. Choose a media file to convert.');
+    return ffmpeg;
+  })();
+  try { return await ffmpegLoadPromise; }
+  catch (error) { ffmpegLoadPromise = null; throw error; }
+}
+
 $('#mediaRun').addEventListener('click', async () => {
   const file = $('#mediaFile').files[0];
-  const operation = $('#mediaOperation').value;
   const button = $('#mediaRun');
-  $('#mediaDownload').classList.add('hidden');
-  $('#mediaResult').classList.add('hidden');
-  if (!file) { mediaStatus('Choose a source file first.'); $('#mediaFile').focus(); return; }
-  if (file.size > 95 * 1024 * 1024) { mediaStatus('This app currently allows uploads up to 95 MB.'); return; }
-  const form = new FormData();
-  form.append('file', file, file.name);
-  form.append('operation', operation);
-  form.append('title', $('#mediaTitle').value.trim());
-  button.disabled = true; mediaStatus('Uploading securely to your media server…');
+  const download = $('#mediaDownload');
+  const preview = $('#mediaPreview');
+  const outputName = 'hollywood-jailbreak-converted.mp4';
+  if (!file) { mediaStatus('Choose a video or audio file first.'); $('#mediaFile').focus(); return; }
+  if (file.size > 250 * 1024 * 1024) { mediaStatus('Choose a file smaller than 250 MB. Smaller files work best on phones.'); return; }
+  if (mediaOutputUrl) { URL.revokeObjectURL(mediaOutputUrl); mediaOutputUrl = null; }
+  download.classList.add('hidden');
+  preview.classList.add('hidden');
+  button.disabled = true;
+  let inputName = '';
   try {
-    const data = await mediaRequest('/media', { method: 'POST', body: form });
-    activeMediaJob = data.id;
-    mediaStatus('Upload complete. Processing started.');
-    $('#mediaResult').classList.remove('hidden');
-    $('#mediaResult').textContent = `Job ${data.id}\n${data.message || 'Queued for processing.'}`;
-    if (mediaPollHandle) clearInterval(mediaPollHandle);
-    mediaPollHandle = setInterval(() => pollMediaJob(activeMediaJob), 3000);
-    await pollMediaJob(activeMediaJob);
-  } catch (err) {
-    mediaStatus(err.message || 'Upload failed.');
+    const ffmpeg = await getBrowserFFmpeg();
+    inputName = 'input' + (file.name.match(/\.[a-z0-9]{1,8}$/i)?.[0] || '.media');
+    mediaStatus('Reading source file into browser memory…');
+    await ffmpeg.writeFile(inputName, new Uint8Array(await file.arrayBuffer()));
+    mediaStatus('Converting to MP4 (H.264 video / AAC audio)…');
+    const code = await ffmpeg.exec(['-i', inputName, '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23', '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', outputName]);
+    if (code !== 0) throw new Error('FFmpeg could not convert this file. Try a different format or a smaller source.');
+    const data = await ffmpeg.readFile(outputName);
+    mediaOutputUrl = URL.createObjectURL(new Blob([data], { type: 'video/mp4' }));
+    download.href = mediaOutputUrl;
+    download.download = outputName;
+    download.classList.remove('hidden');
+    preview.src = mediaOutputUrl;
+    preview.classList.remove('hidden');
+    mediaStatus('Conversion complete. Download your MP4 below.');
+    try { await ffmpeg.deleteFile(inputName); await ffmpeg.deleteFile(outputName); } catch { /* temporary in-memory files */ }
+  } catch (error) {
+    mediaStatus(error.message || 'Conversion failed. Try another file.');
+  } finally {
     button.disabled = false;
   }
+});
+
+window.addEventListener('beforeunload', () => {
+  if (mediaOutputUrl) URL.revokeObjectURL(mediaOutputUrl);
 });
